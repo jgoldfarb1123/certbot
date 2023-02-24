@@ -168,6 +168,7 @@ class AuthHandler:
             # Poll all updated authorizations.
             authzrs_to_check = {index: self.acme.poll(authzr) for index, (authzr, _)
                                 in authzrs_to_check.items()}
+            logger.info(f'List of authorizers to check: {authzrs_to_check}')
             # Update the original list of authzr with the updated authzrs from server.
             for index, (authzr, _) in authzrs_to_check.items():
                 authzrs[index] = authzr
@@ -178,6 +179,7 @@ class AuthHandler:
             for authzr_failed in authzrs_failed:
                 logger.info('Challenge failed for domain %s',
                                authzr_failed.body.identifier.value)
+                logger.info(f'{authzr_failed.body.status} is auth status Failed authzr: {authzr_failed}')
             # Accumulating all failed authzrs to build a consolidated report
             # on them at the end of the polling.
             authzrs_failed_to_report.extend(authzrs_failed)
