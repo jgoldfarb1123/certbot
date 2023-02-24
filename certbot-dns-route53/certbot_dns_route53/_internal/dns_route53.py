@@ -2,6 +2,7 @@
 import collections
 import logging
 import time
+from time import sleep
 from typing import Any
 from typing import DefaultDict
 from typing import Dict
@@ -15,6 +16,7 @@ from acme.challenges import ChallengeResponse
 from certbot import errors
 from certbot.achallenges import AnnotatedChallenge
 from certbot.plugins import dns_common
+from certbot.display import util as display_util
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +68,14 @@ class Authenticator(dns_common.DNSAuthenticator):
         except (NoCredentialsError, ClientError) as e:
             logger.debug('Encountered error during perform: %s', e, exc_info=True)
             raise errors.PluginError("\n".join([str(e), INSTRUCTIONS]))
+        # DNS updates take time to propagate and checking to see if the update has occurred is not
+        # reliable (the machine this code is running on might be able to see an update before
+        # the ACME server). So: we sleep for a short amount of time we believe to be long enough.
+        logger.info(
+            "Waiting %d seconds for DNS changes to propagate"
+            % self.conf("propagation-seconds")
+        )
+        sleep(self.conf("propagation-seconds"))
         return [achall.response(achall.account_key) for achall in achalls]
 
     def _cleanup(self, domain: str, validation_name: str, validation: str) -> None:
@@ -107,6 +117,8 @@ class Authenticator(dns_common.DNSAuthenticator):
     def _change_txt_record(self, action: str, validation_domain_name: str, validation: str) -> str:
         zone_id = self._find_zone_id_for_domain(validation_domain_name)
 
+        logger.info(f'Performing change_txt_record action {action} for {zone_id} {validation_domain_name}')
+
         rrecords = self._resource_records[validation_domain_name]
         challenge = {"Value": '"{0}"'.format(validation)}
         if action == "DELETE":
@@ -147,8 +159,10 @@ class Authenticator(dns_common.DNSAuthenticator):
         for unused_n in range(0, 120):
             response = self.r53.get_change(Id=change_id)
             if response["ChangeInfo"]["Status"] == "INSYNC":
+                logger.info(f'{change_id} returned response INSYNC')
                 return
             time.sleep(5)
+            logger.info(f'{change_id} not INSYNC, sleeping...')
         raise errors.PluginError(
             "Timed out waiting for Route53 change. Current status: %s" %
             response["ChangeInfo"]["Status"])
